@@ -421,6 +421,16 @@ above) instead of relying only on `OPENSHELL_GATEWAY_ENDPOINT`; some tests call
 ### Kubernetes E2E Notes
 
 Use `mise run e2e:kubernetes` for the standard Helm-backed Kubernetes suite.
+For the opt-in application listener, build/import matching branch images and run
+`mise run e2e:kubernetes:app-listener`; see `e2e/kubernetes/app-listener/README.md`
+for image, topology, delivery-mode and takeover inputs. The task owns an isolated
+Helm release/namespace, temporary TLS material, in-cluster clients, teardown and
+evidence under `results/app-listener/`. It checks policy denial, dedicated Service
+selection, shared-owner takeover, gateway-outage expiry and disabled-listener
+gateway compatibility, without discovery or a proxy. CI runs four cases under
+`test:e2e` and includes them in `Core E2E result`. Its reusable kind setup installs
+pinned Calico only for this lane; other jobs retain kindnet. Local k3s already
+enforces policy. The lower-level `verify.py` can target a predeployed release.
 The kube e2e wrapper creates only one port-forward, to `svc/openshell`; it no
 longer forwards the unauthenticated health listener or runs a `/readyz` e2e
 target. `/readyz` remains covered by server unit/integration tests.

@@ -5,6 +5,101 @@ images. This fixture exercises the listener without discovery or the reference
 proxy. The opt-in Helm values are
 `deploy/helm/openshell/ci/values-app-listener.yaml`.
 
+## Repeatable local checks
+
+The local and CI entry point creates an isolated Helm release, temporary TLS
+Secret and client resources, runs the checks, and removes the release/namespace:
+
+```shell
+KUBECONFIG="$PWD/kubeconfig" \
+IMAGE_TAG=dev OPENSHELL_REGISTRY=openshell \
+OPENSHELL_E2E_APP_TOPOLOGY=shared \
+OPENSHELL_E2E_APP_TAKEOVER=abrupt \
+  mise run e2e:kubernetes:app-listener
+```
+
+Build and import matching `openshell/gateway:dev`, `openshell/supervisor:dev`,
+and `openshell/sandbox:dev` images first, or set the registry/tag to images
+already loaded into the cluster. Build the CLI or set `OPENSHELL_BIN` to it.
+Set `OPENSHELL_E2E_KUBE_CONTEXT` to select a context explicitly. The cluster must
+enforce NetworkPolicy; the local k3s default does. The task installs the pinned
+Agent Sandbox controller only when its CRD is absent.
+Set `OPENSHELL_E2E_KUBECONFIG` when testing a separate cluster whose kubeconfig
+differs from the repository's mise environment.
+
+`OPENSHELL_E2E_APP_TOPOLOGY` accepts `dedicated` (default) or `shared`;
+`OPENSHELL_E2E_APP_DELIVERY` accepts `push` (default) or `poll`;
+`OPENSHELL_E2E_APP_TAKEOVER` accepts `graceful` (default) or `abrupt` for shared
+supervisors. Dedicated runs include gateway-outage expiry. Every run also
+disables the listener and verifies absent app sockets/TLS mounts/Services and
+continued gateway application ingress. Logs, events, and resource summaries
+are written under `results/app-listener/`, without TLS private keys or Secrets.
+
+GitHub Actions runs four matrix cases under the existing `test:e2e` label:
+dedicated push/poll and shared graceful/abrupt takeover. These jobs use the
+reusable Kubernetes workflow, with kindnet replaced by pinned Calico for policy
+enforcement, and participate in `Core E2E result`. CI uploads the evidence even
+on failure. They still require the normal current-head `/ok to test <SHA>`
+approval mirror.
+
+### Checking an already deployed release
+
+Build the gateway, supervisor, sandbox, and CLI from the branch under test and
+deploy them through the local Helm development workflow. Use an isolated release
+namespace with gateway TLS, unauthenticated development API access, and the app
+listener enabled. Provide the application TLS Secret before installing the
+release. The workload and client fixture use `python:3.12-slim`.
+
+Run from the repository root, supplying the public application certificate/CA:
+
+```shell
+KUBECONFIG="$PWD/kubeconfig" uv run --no-project python \
+  e2e/kubernetes/app-listener/verify.py \
+  --namespace listener-review-shared \
+  --gateway-endpoint https://localhost:29203 \
+  --forward-gateway service/listener-review \
+  --app-ca /path/to/app-ca.crt \
+  --network-policy \
+  --takeover graceful
+```
+
+Use the actual namespace and gateway Service name of the test release. The
+runner maintains its API port-forward across gateway restarts; application
+traffic originates in client Pods and uses cluster networking. Application TLS
+verifies the supplied CA and hostname. The development API connection uses
+`--gateway-insecure` with an isolated temporary CLI configuration.
+
+The runner creates and cleans up its sandboxes, client Pods, public-CA ConfigMap,
+and ingress policies. It checks named/unnamed HTTP routes, public Host/Origin and
+cookies, credential stripping and explicit bearer passthrough, unknown routes,
+Host/SNI mismatch, quiet WebSockets beyond 30 seconds, selective withdrawal, and
+re-exposure without restarting the application. When dedicated app Services are
+configured, it also verifies their DNS and EndpointSlices.
+
+`--network-policy` requires an enforcing cluster network implementation, such as
+the local k3s default. A default kind cluster needs a policy-enforcing CNI before
+this assertion can establish isolation.
+
+For a two-member shared pool, `--takeover graceful` deletes the owning Pod and
+checks that its sandbox keeps its Pod UID, runtime generation, process, and
+in-memory state, while another owner's WebSocket survives. `--takeover abrupt`
+first SIGKILLs the supervisor container through the local k3d/kind node's Docker
+container, preventing a graceful leave; it requires access to that Docker engine.
+These options deliberately interrupt test resources in the supplied namespace.
+
+For dedicated topology, omit `--takeover`. Add
+`--expire-gateway statefulset/listener-review` (using the actual workload name)
+to scale the isolated gateway to zero, verify route/stream expiry, restore its
+original replica count, and check application survival. Repeat with gateway
+`config_delivery_mode` set to `push` and `poll`.
+
+The lower-level runner leaves the Helm release and TLS Secret in place. Use
+`--disabled --gateway-service <service>` instead of takeover/expiry flags to
+check an already disabled release. Configuration rejection and the additional
+deployment cleanup scenarios remain in the manual checklist below.
+
+## Manual deployment and additional scenarios
+
 Before deployment, provide an operator-owned `openshell-app-tls` Secret in the
 supervisor namespace with `tls.crt` and `tls.key` for
 `*.services.example.com`. Keep private keys outside the checkout. Allow a labeled
@@ -63,7 +158,7 @@ that it accepts its own non-controller Sandbox owner reference and has Service
 Services must be left untouched, and cleanup uses UID/resource-version
 preconditions.
 
-For HA pool validation after integration with #4864, use at least two supervisor
+For HA pool validation, use at least two supervisor
 members with distinct sandbox owners. Move one owner through graceful downscale
 and abrupt loss. Existing streams may disconnect; after selecting the new owner,
 new HTTP/WebSocket connections must work without restarting the workload.
