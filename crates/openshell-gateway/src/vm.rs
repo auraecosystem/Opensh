@@ -863,6 +863,7 @@ mod tests {
                     endpoint: "http://collector.internal:4317".to_string(),
                 }),
                 ocsf: None,
+                metrics: None,
                 agent: None,
             }),
             "production-us-west",
@@ -896,6 +897,7 @@ mod tests {
                     endpoint: "http://siem.internal:4317".to_string(),
                     schema_version: Some(OcsfSchemaVersion::V1_3),
                 }),
+                metrics: None,
                 agent: None,
             }),
             "production-us-west",
@@ -928,6 +930,7 @@ mod tests {
                 service_name: None,
                 traces: None,
                 ocsf: None,
+                metrics: None,
                 agent: Some(openshell_server::config_file::AgentOtlpConfig {
                     endpoint: "http://agents.internal:4317".to_string(),
                 }),
