@@ -4722,6 +4722,7 @@ pub async fn workspace_create(
     server: &str,
     name: &str,
     label_args: &[String],
+    output: &str,
     tls: &TlsOptions,
 ) -> Result<()> {
     use openshell_core::proto::CreateWorkspaceRequest;
@@ -4749,6 +4750,10 @@ pub async fn workspace_create(
         .workspace
         .ok_or_else(|| miette!("workspace missing from response"))?;
 
+    if crate::output::print_output_single(output, &workspace, workspace_to_json)? {
+        return Ok(());
+    }
+
     println!(
         "{} Created workspace {}",
         "✓".green().bold(),
@@ -4758,7 +4763,7 @@ pub async fn workspace_create(
     Ok(())
 }
 
-pub async fn workspace_get(server: &str, name: &str, tls: &TlsOptions) -> Result<()> {
+pub async fn workspace_get(server: &str, name: &str, output: &str, tls: &TlsOptions) -> Result<()> {
     use openshell_core::proto::GetWorkspaceRequest;
 
     let mut client = grpc_client(server, tls).await?;
@@ -4773,6 +4778,10 @@ pub async fn workspace_get(server: &str, name: &str, tls: &TlsOptions) -> Result
         .into_inner()
         .workspace
         .ok_or_else(|| miette!("workspace missing from response"))?;
+
+    if crate::output::print_output_single(output, &workspace, workspace_to_json)? {
+        return Ok(());
+    }
 
     println!("{}", "Workspace:".cyan().bold());
     println!();
